@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import shutil
+import socket
+import sys
 
 import streamlit as st
 from PIL import Image
@@ -504,5 +507,69 @@ def main() -> None:
                 st.success("Temporary cache was removed. The exported video was kept.")
 
 
+def is_running_under_streamlit() -> bool:
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+    except Exception:
+        return False
+    return get_script_run_ctx(suppress_warning=True) is not None
+
+
+def launch_streamlit_server(port: int) -> int:
+    import streamlit.web.cli as stcli
+
+    sys.argv = [
+        "streamlit",
+        "run",
+        str(Path(__file__).resolve()),
+        "--server.port",
+        str(port),
+        "--global.developmentMode=false",
+    ]
+    return stcli.main()
+
+
+def parse_port_argument() -> int | None:
+    parser = argparse.ArgumentParser(prog="camo")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="GUI port (default: first available port starting at 8501)",
+    )
+    return parser.parse_args().port
+
+
+def find_available_port(start_port: int = 8501, max_tries: int = 20) -> int:
+    for port in range(start_port, start_port + max_tries):
+        if _is_port_available(port):
+            return port
+    raise RuntimeError(f"Could not find an available port in {start_port}-{start_port + max_tries - 1}")
+
+
+def _is_port_available(port: int) -> bool:
+    checks = [
+        (socket.AF_INET, ("127.0.0.1", port)),
+        (socket.AF_INET, ("0.0.0.0", port)),
+        (socket.AF_INET6, ("::1", port)),
+        (socket.AF_INET6, ("::", port)),
+    ]
+    for family, address in checks:
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(address)
+        except OSError:
+            return False
+    return True
+
+
 if __name__ == "__main__":
-    main()
+    if is_running_under_streamlit():
+        main()
+    else:
+        requested_port = parse_port_argument()
+        port = requested_port if requested_port is not None else find_available_port()
+        if requested_port is None and port != 8501:
+            print(f"Port 8501 is busy. Launching Streamlit on port {port}.", flush=True)
+        raise SystemExit(launch_streamlit_server(port))

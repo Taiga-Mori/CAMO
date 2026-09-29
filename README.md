@@ -89,7 +89,16 @@ pip install -r requirements.txt
 4. Launch the app:
 
 ```bash
-streamlit run app.py
+python app.py
+```
+
+`start.sh` / `start.bat` do the same using the bundled `venv`. If port `8501` is
+unavailable, the launcher automatically picks the next free port.
+
+To use a specific port (also works with `start.sh` / `start.bat`):
+
+```bash
+python app.py --port 8600
 ```
 
 ## Notes
