@@ -24,7 +24,8 @@ def _cpu_device() -> ComputeDevice:
     return ComputeDevice("cpu", "CPU", status)
 
 
-def _nvidia_smi_status_by_uuid() -> dict[str, str]:
+def _nvidia_smi_status_by_uuid() -> tuple[dict[str, str], str]:
+    """Return utilization text keyed by GPU UUID, plus the failure reason when nvidia-smi is unusable."""
     command = [
         "nvidia-smi",
         "--query-gpu=uuid,utilization.gpu,memory.used,memory.total",
@@ -38,8 +39,15 @@ def _nvidia_smi_status_by_uuid() -> dict[str, str]:
             text=True,
             timeout=10,
         )
-    except (OSError, subprocess.SubprocessError):
-        return {}
+    except FileNotFoundError:
+        return {}, "nvidia-smi が PATH にありません"
+    except subprocess.TimeoutExpired:
+        return {}, "nvidia-smi が10秒以内に応答しません"
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip().splitlines()
+        return {}, f"nvidia-smi がエラー終了しました: {detail[0] if detail else exc.returncode}"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {}, f"nvidia-smi を実行できません: {exc}"
 
     statuses = {}
     for line in result.stdout.splitlines():
@@ -48,12 +56,25 @@ def _nvidia_smi_status_by_uuid() -> dict[str, str]:
             continue
         uuid, usage, memory_used, memory_total = parts
         statuses[_normalize_uuid(uuid)] = f"使用率 {usage}% / VRAM {memory_used}/{memory_total} MiB"
-    return statuses
+    return statuses, ""
 
 
 def _normalize_uuid(uuid: str) -> str:
     uuid = uuid.strip().lower()
     return uuid[len("gpu-"):] if uuid.startswith("gpu-") else uuid
+
+
+def _nvml_status(torch, index: int, total_mib: int) -> str | None:
+    # torch.cuda.utilization() goes through NVML (nvidia-ml-py) and maps CUDA_VISIBLE_DEVICES itself.
+    try:
+        usage = torch.cuda.utilization(index)
+    except Exception:
+        return None
+    try:
+        used_mib = torch.cuda.device_memory_used(index) // (1024 * 1024)
+        return f"使用率 {usage}% / VRAM {used_mib}/{total_mib} MiB"
+    except Exception:
+        return f"使用率 {usage}% / VRAM {total_mib} MiB"
 
 
 def _cuda_devices() -> list[ComputeDevice]:
@@ -68,11 +89,15 @@ def _cuda_devices() -> list[ComputeDevice]:
     except Exception:
         return []
 
-    statuses = _nvidia_smi_status_by_uuid()
+    statuses, smi_error = _nvidia_smi_status_by_uuid()
     devices = []
     for index, props in enumerate(properties):
         uuid = _normalize_uuid(str(getattr(props, "uuid", "")))
-        status = statuses.get(uuid) or f"VRAM {props.total_memory // (1024 * 1024)} MiB / 利用率を取得できません"
+        total_mib = props.total_memory // (1024 * 1024)
+        status = statuses.get(uuid) or _nvml_status(torch, index, total_mib)
+        if status is None:
+            reason = smi_error or f"nvidia-smi の出力に UUID {uuid or '(不明)'} の GPU がありません"
+            status = f"VRAM {total_mib} MiB / 利用率を取得できません（{reason}）"
         devices.append(ComputeDevice(str(index), f"CUDA:{index} — {props.name}", status))
     return devices
 
