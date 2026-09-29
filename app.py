@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import mimetypes
 from pathlib import Path
 import shutil
 import socket
@@ -35,6 +36,7 @@ ASSET_DIR = ROOT_DIR / "asset"
 CACHE_DIR = ROOT_DIR / ".camo_cache"
 UPLOAD_DIR = CACHE_DIR / "uploads"
 FACE_DIR = ROOT_DIR / "faces"
+MAX_UPLOAD_SIZE_MB = 4096
 DEFAULT_MODEL = "yolo11n-pose.pt"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 APP_ICON = Image.open(ASSET_DIR / "icon.png")
@@ -61,6 +63,7 @@ def ensure_state() -> None:
     st.session_state.setdefault("last_error", "")
     st.session_state.setdefault("uploaded_video_name", "")
     st.session_state.setdefault("uploaded_video_path", "")
+    st.session_state.setdefault("uploaded_file_id", "")
     st.session_state.setdefault("export_warnings", [])
     st.session_state.setdefault("analysis_warnings", [])
     st.session_state.setdefault("active_input_key", "")
@@ -76,6 +79,7 @@ def clear_processing_cache() -> None:
     st.session_state["analysis_path"] = ""
     st.session_state["uploaded_video_path"] = ""
     st.session_state["uploaded_video_name"] = ""
+    st.session_state["uploaded_file_id"] = ""
     st.session_state["active_input_key"] = ""
     st.session_state["export_warnings"] = []
     st.session_state["analysis_warnings"] = []
@@ -129,9 +133,12 @@ def main() -> None:
         )
         if uploaded_video is not None:
             try:
-                saved_path = persist_uploaded_video(uploaded_video)
-                st.session_state["uploaded_video_path"] = str(saved_path)
-                st.session_state["uploaded_video_name"] = uploaded_video.name
+                # Streamlit reruns the script on every interaction; copy each upload only once.
+                if st.session_state["uploaded_file_id"] != uploaded_video.file_id:
+                    saved_path = persist_uploaded_video(uploaded_video)
+                    st.session_state["uploaded_video_path"] = str(saved_path)
+                    st.session_state["uploaded_video_name"] = uploaded_video.name
+                    st.session_state["uploaded_file_id"] = uploaded_video.file_id
                 st.caption(f"Uploaded: {uploaded_video.name}")
             except Exception as exc:
                 st.session_state["last_error"] = (
@@ -498,6 +505,14 @@ def main() -> None:
                 st.image(str(output_path))
             else:
                 st.video(str(output_path))
+            st.download_button(
+                "Download output",
+                data=lambda: output_path.read_bytes(),
+                file_name=output_path.name,
+                mime=mimetypes.guess_type(output_path.name)[0] or "application/octet-stream",
+                on_click="ignore",
+                use_container_width=True,
+            )
         review_col, finalize_col = st.columns(2)
         with review_col:
             st.info("If you want to adjust masking, face assets, mosaic granularity, or swap angle thresholds, change the settings above and export again. Tracking results are reused from cache.")
@@ -525,6 +540,8 @@ def launch_streamlit_server(port: int) -> int:
         "--server.port",
         str(port),
         "--global.developmentMode=false",
+        "--server.maxUploadSize",
+        str(MAX_UPLOAD_SIZE_MB),
     ]
     return stcli.main()
 

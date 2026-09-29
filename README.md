@@ -101,6 +101,23 @@ To use a specific port (also works with `start.sh` / `start.bat`):
 python app.py --port 8600
 ```
 
+## Running On A Remote Server
+
+Start CAMO on the server with a fixed port and forward it over SSH:
+
+```bash
+# on the server
+./start.sh --port 8600
+# on your local machine
+ssh -L 8600:localhost:8600 user@server
+```
+
+Then open `http://localhost:8600` in your local browser.
+
+- Uploaded files are sent from your browser to the server (up to 4 GB per file).
+- "Original local media path" refers to a path on the server, not on your local machine.
+- Results are written on the server; use "Download output" to save them locally.
+
 ## Notes
 
 - Streamlit on macOS can crash when native `tkinter` dialogs are opened from a worker thread, so CAMO uses Streamlit's own file uploader instead of a native browse dialog.

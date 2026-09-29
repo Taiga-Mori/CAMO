@@ -10,6 +10,8 @@ from typing import Callable
 
 import cv2
 
+from camo.devices import cuda_visible_devices_for
+
 
 ProgressCallback = Callable[[float, str], None] | None
 
@@ -68,7 +70,7 @@ def dreamidv_device_available(
     if not python.exists():
         return False
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = device
+    env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices_for(device)
     result = subprocess.run(
         [
             str(python),
@@ -233,7 +235,7 @@ def run_dreamidv_video(
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     runner = project_root / "camo" / "dreamidv_runner.py"
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = device
+    env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices_for(device)
     env["PYTHONPATH"] = str(paths["repository"])
     if progress_callback:
         progress_callback(0.0, "Starting DreamID-V...")
