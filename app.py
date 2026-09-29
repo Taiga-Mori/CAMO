@@ -39,6 +39,7 @@ FACE_DIR = ROOT_DIR / "faces"
 MAX_UPLOAD_SIZE_MB = 4096
 DEFAULT_MODEL = "yolo11n-pose.pt"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MEDIA_EXTENSIONS = [".mp4", ".mov", ".m4v", ".avi", ".mkv", *sorted(IMAGE_EXTENSIONS)]
 APP_ICON = Image.open(ASSET_DIR / "icon.png")
 MASK_OPTIONS = {
     "Do not process": "none",
@@ -93,6 +94,73 @@ def persist_uploaded_video(uploaded_file) -> Path:
     return target_path
 
 
+def _set_server_browse_dir(path: Path) -> None:
+    st.session_state["server_browse_dir"] = str(path)
+    st.session_state["server_browse_entry"] = None
+
+
+def _on_server_browse_dir_typed() -> None:
+    path = Path(st.session_state["server_browse_dir"].strip() or "~").expanduser()
+    if path.is_file():
+        _select_server_file(path)
+        path = path.parent
+    _set_server_browse_dir(path)
+
+
+def _on_server_browse_entry_selected() -> None:
+    entry = st.session_state["server_browse_entry"]
+    if entry is None:
+        return
+    target = Path(st.session_state["server_browse_dir"]) / entry
+    if target.is_dir():
+        _set_server_browse_dir(target.resolve())
+    else:
+        _select_server_file(target)
+        st.session_state["server_browse_entry"] = None
+
+
+def _select_server_file(path: Path) -> None:
+    st.session_state["local_video_path"] = str(path)
+    st.session_state["local_video_path_input"] = str(path)
+
+
+def render_server_file_browser() -> None:
+    """Browse the filesystem of the machine running CAMO (the server when used over SSH)."""
+    if "server_browse_dir" not in st.session_state:
+        selected = Path(st.session_state["local_video_path"]).expanduser()
+        start_dir = selected.parent if st.session_state["local_video_path"] and selected.parent.is_dir() else Path.home()
+        st.session_state["server_browse_dir"] = str(start_dir)
+
+    st.text_input("Folder", key="server_browse_dir", on_change=_on_server_browse_dir_typed)
+    current_dir = Path(st.session_state["server_browse_dir"]).expanduser()
+    if not current_dir.is_dir():
+        st.warning("This folder does not exist on the server.")
+        return
+
+    try:
+        children = sorted(
+            (child for child in current_dir.iterdir() if not child.name.startswith(".")),
+            key=lambda child: child.name.lower(),
+        )
+        folders = [f"{child.name}/" for child in children if child.is_dir()]
+        media_files = [
+            child.name for child in children if child.is_file() and child.suffix.lower() in MEDIA_EXTENSIONS
+        ]
+    except OSError as exc:
+        st.warning(f"Could not read this folder: {exc}")
+        return
+
+    options = (["../"] if current_dir.parent != current_dir else []) + folders + media_files
+    st.selectbox(
+        "Open a folder or select a media file",
+        options=options,
+        index=None,
+        key="server_browse_entry",
+        placeholder=f"{len(folders)} folders, {len(media_files)} media files",
+        on_change=_on_server_browse_entry_selected,
+    )
+
+
 def is_image_path(path: Path | str) -> bool:
     return Path(path).suffix.lower() in IMAGE_EXTENSIONS
 
@@ -128,8 +196,8 @@ def main() -> None:
     with st.sidebar:
         st.subheader("Input Media")
         uploaded_video = st.file_uploader(
-            "Choose a video or image file",
-            type=["mp4", "mov", "m4v", "avi", "mkv", "jpg", "jpeg", "png", "webp"],
+            "Upload a video or image from this computer",
+            type=[extension.lstrip(".") for extension in MEDIA_EXTENSIONS],
         )
         if uploaded_video is not None:
             try:
@@ -146,10 +214,15 @@ def main() -> None:
                     f" {exc}"
                 )
 
+        with st.expander("Browse files on the server", expanded=True):
+            render_server_file_browser()
+
+        st.session_state.setdefault("local_video_path_input", st.session_state["local_video_path"])
         current_path = st.text_input(
-            "Original local media path",
-            value=st.session_state["local_video_path"],
+            "Media file path on the server",
+            key="local_video_path_input",
             placeholder="/absolute/path/to/video-or-image",
+            help="Takes precedence over an uploaded file. The result is saved next to this file.",
         )
         st.session_state["local_video_path"] = current_path.strip()
 

@@ -115,7 +115,9 @@ ssh -L 8600:localhost:8600 user@server
 Then open `http://localhost:8600` in your local browser.
 
 - Uploaded files are sent from your browser to the server (up to 4 GB per file).
-- "Original local media path" refers to a path on the server, not on your local machine.
+- To process a file that is already on the server, open "Browse files on the server" in the
+  sidebar and pick it, or type its path into "Media file path on the server". Nothing is
+  uploaded, and the result is saved next to that file.
 - Results are written on the server; use "Download output" to save them locally.
 
 ## Notes
