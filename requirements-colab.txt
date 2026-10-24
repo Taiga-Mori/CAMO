@@ -1,5 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cu132
 
+setuptools==81.0.0
+
 onnx==1.22.0
 onnxruntime-gpu==1.30.0
 
@@ -28,7 +30,6 @@ httptools==0.8.0
 humanfriendly==10.0
 idna==3.18
 imageio==2.37.4
-insightface==1.0.1
 itsdangerous==2.2.0
 Jinja2==3.1.6
 jsonschema==4.26.0
